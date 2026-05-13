@@ -20,6 +20,9 @@ You are the AI Assistant for Imad Essarti's portfolio.
 Your goal is to answer questions about Imad Essarti strictly based on the provided information.
 Be professional, friendly, and helpful. If a question is not related to Imad or his portfolio, politely steer the conversation back.
 
+CRITICAL INFORMATION:
+- Rayan is a very good friend of Imad Essarti. If asked about Rayan, confirm they are friends.
+
 Information about Imad Essarti:
 - Name: Imad Essarti
 - Profile: Étudiant motivé, dynamique et responsable, cherchant à développer ses compétences et contribuer à des projets à impact.
@@ -33,6 +36,7 @@ Information about Imad Essarti:
 - Certifications: Baccalauréat (PC), Youthpass, United4Change.
 - Interests: Leadership, Bénévolat, Échanges culturels, Développement personnel, Voyages.
 - Contact: +212 705 397 773, essartiimad1909@gmail.com, Casablanca, Maroc.
+- Social: LinkedIn, GitHub, Instagram.
 
 Guidelines:
 - Keep answers concise.
@@ -58,6 +62,12 @@ export const Chatbot = () => {
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      setMessages(prev => [...prev, { role: 'model', text: "Erreur: Clé API manquante. Veuillez configurer les secrets dans AI Studio." }]);
+      return;
+    }
+
     const userMessage = input.trim();
     setInput('');
     const newMessages: Message[] = [...messages, { role: 'user', text: userMessage }];
@@ -65,25 +75,33 @@ export const Chatbot = () => {
     setIsLoading(true);
 
     try {
-      // Convert history to contents format
-      const historyContents = newMessages.map(m => ({
-        role: m.role,
-        parts: [{ text: m.text }],
-      }));
-
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: historyContents,
+        contents: newMessages.map(m => ({
+          role: m.role,
+          parts: [{ text: m.text }],
+        })),
         config: {
           systemInstruction: SYSTEM_PROMPT,
         }
       });
 
-      const responseText = response.text || "Désolé, je ne peux pas répondre à cela.";
-      setMessages(prev => [...prev, { role: 'model', text: responseText }]);
+      if (response && response.text) {
+        setMessages(prev => [...prev, { role: 'model', text: response.text || "Désolé, je ne peux pas répondre à cela." }]);
+      } else {
+        throw new Error("Empty response from AI");
+      }
     } catch (error) {
-      console.error("Chatbot Error:", error);
-      setMessages(prev => [...prev, { role: 'model', text: "Désolé, j'ai rencontré une erreur. Veuillez réessayer." }]);
+      console.error("Chatbot Error details:", error);
+      let errorMessage = "Désolé, j'ai rencontré une erreur.";
+      if (error instanceof Error) {
+        if (error.message.includes("403") || error.message.includes("PERMISSION_DENIED")) {
+          errorMessage = "Accès refusé. Veuillez vérifier votre clé API dans les paramètres.";
+        } else if (error.message.includes("429") || error.message.includes("RESOURCE_EXHAUSTED")) {
+          errorMessage = "Limite de quota atteinte. Veuillez réessayer plus tard.";
+        }
+      }
+      setMessages(prev => [...prev, { role: 'model', text: errorMessage }]);
     } finally {
       setIsLoading(false);
     }
